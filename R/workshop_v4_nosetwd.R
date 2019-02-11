@@ -29,7 +29,7 @@ set_here()
 # Code Section 1 - Data Exploration ---------------------------------------
 
 # Load the data from the trial
-trial <- read.csv(here("trial1.csv"), header=TRUE)
+trial <- read.csv(here("R/trial1.csv"), header=TRUE)
 
 # Print the names of the available variables
 names(trial)
@@ -87,7 +87,7 @@ ggsurvplot(kmfit,
            ggtheme = theme_bw())
 
 png(filename = "ITTkm.png", width = 2*1024, height = 2*1024, units = 'px', res = 72*5)
-p1
+
 dev.off()
 # Code Section 3 - Conditional Hazard Ratios ------------------------------
 
@@ -201,7 +201,6 @@ p2 <- ggplot(results, aes(x=visit, y=s))+
   labs(colour="Treatment Arm") +
   theme_bw() +
   theme(legend.position="bottom")
-p2
 png(filename = "ITTsurv.png", width = 2*1060, height = 2*1024, units = 'px', res = 72*5)
 p2
 dev.off()

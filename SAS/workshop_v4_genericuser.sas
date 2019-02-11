@@ -14,11 +14,11 @@
 %let user = %sysget(USERPROFILE);
 /*Set dlgcdir to the location of your extracted file
 /*If you unzipped the github repository in your download folder, you don't need to change anything*/
-%let rc = %sysfunc(dlgcdir("&user./Downloads/CausalSurvivalAnalysis-master"));
+%let rc = %sysfunc(dlgcdir("&user./Downloads/CausalSurvivalWorkshop_2019"));
 libname surv "./";
 
 /* Or, set working directory to your location manually by uncommenting the code below */
-/*libname surv "<yourpathhere>\CausalSurvivalAnalysis-master";*/
+/*libname surv "<yourpathhere>\CausalSurvivalWorkshop_2019\SAS";*/
 
 /*********************************************************************************************************/
 /**********************************Exercise 2*************************************************************/
