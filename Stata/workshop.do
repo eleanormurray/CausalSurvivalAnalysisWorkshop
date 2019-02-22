@@ -7,12 +7,6 @@
 
 /********************************************/
 /* Code Section 0 - Data Setup              */ 
-/* Read in the data set						*/
-/* Tip: if Stata can't find the data do:	*/
-/* 1. Close Stata							*/
-/* 2. Go to the downloaded workshop folder	*/
-/* 3. Double click 'workshop.do'			*/
-/* 4. Run 'use' command again				*/
 /********************************************/
 
 use "trial1.dta", clear
@@ -20,10 +14,6 @@ use "trial1.dta", clear
 /*Create some nice labels*/
 label define rand_lab 0 "placebo" 1 "treatment"
 label values rand rand_lab
-
-/*********************************************************************************************************/
-/**********************************Exercise 2*************************************************************/
-/*********************************************************************************************************/
 
 
 /**********************************************/
@@ -82,7 +72,7 @@ stset maxVisit_s if visit == 0, failure(deathOverall)
 /*How  many  individuals  died  in  each  treatment  arm?*/
 /*What was the cumulative probability of mortality by 14 visits in each treatment arm?*/
 tab deathOverall if visit == 0
-tab deathOverall rand if visit == 0 
+tab rand deathOverall if visit == 0 
 
 
 /**********************************************/
@@ -93,10 +83,11 @@ tab deathOverall rand if visit == 0
 sts graph, by(rand) risktable ylabel(0.7 (0.1) 1) xlabel(#8) xtitle(Visit) ///
  ytitle(Survival probability) title(Kaplan-Meier Curve showing survival in each trial arm) legend(on)
 
+ sts list, by(rand)
 
 
 /**********************************************/
-/* Code Section 3 - Conditional Hazard Ratios*/ 
+/* Code Section 3a - Unadjusted Hazard Ratios*/ 
 /********************************************/
 
 /* Data processing: create squared time variable [visit2]*/
@@ -108,7 +99,12 @@ stcox rand
 /* Calculate the unadjusted hazard ratio from a pooled logistic regression model*/
 /*We use the CLUSTER(SIMID) statement to get robust standard errors & valid, but conservative, confidence intervals*/
 /*We use the LOGSITIC command to get the exponentiated coefficient, here the Hazard Ratio*/
-logistic death visit visit2 rand, vce(robust)
+logistic death visit visit2 rand, cluster(simid)
+
+
+/**********************************************/
+/* Code Section 3b - Conditional Hazard Ratios*/ 
+/********************************************/
 
 /* Calculate the baseline covariate-adjusted hazard ratio from a Cox PH model*/
 stcox rand mi_bin niha_b hiserchol_b hisertrigly_b hiheart_b chf_b ap_b ic_b ///
@@ -196,4 +192,70 @@ matrix rownames observe = Surv_placebo Surv_treatment cHR CIR risk_diff
 
 matrix list observe
 restore
+
+
+/*********************************************************************************************************/
+/**********************************Exercise 3*************************************************************/
+/*********************************************************************************************************/
+
+/*****************************************/
+/* Code Section 5 - Data cleaning for IPW*/ 
+/*****************************************/
+
+use "trial1.dta", clear
+
+/*Create some nice labels*/
+label define adhr_lab 0 "Non-adherers" 1 "Adherers"
+label values adhr_b adhr_lab
+
+/* For this exercise, we want only the placebo arm. We will drop all individuals with rand = 1*/
+drop if rand ==1
+
+/*We don't need the interaction terms for Stata, but we do want to create a censoring variable*/
+gen adh_change = 0
+replace adh_change = 1 if adhr != adhr_b
+by simid, sort: egen cens_visit = min(cond(adh_change == 1),visit, .)
+gen cens_new = 0
+replace cens_new = 1 if visit == cens_visit
+replace cens_new = . if visit > cens_visit
+/*check*/
+list simid visit adhr adhr_b adh_change cens_new in 1/100
+drop cens_visit adh_change
+
+
+/* Check to see how many individuals in your dataset*/
+codebook simid 
+
+/* Number of individuals who adhered versus did not adhere at visit 0*/
+tab adhr_b if visit == 0
+
+/* View first 100 observations of simID, visit, adhr_b, and adhr, and simID, visit, adhr_b, and adhr where adhr_b==1 to understand these variables better*/
+list simid visit adhr_b adhr if adhr_b == 1 in 1/30
+
+/* Need to recreate maxVisit and deathOverall*/
+/* Create 'maxVisit' - total amount of time each individual contributed WHILE continuously adherent (ie cens_new = 0)*/
+by simid, sort: egen maxVisit = max(visit) if cens_new ==0
+/* Check by looking at some individuals with 14 or less than 14 visits*/
+list simid visit maxVisit cens_new death in 1/100
+
+/* The variable death is only '1' at end-of-followup*/
+/* Create 'deathOverall' - an indicator of whether //
+  an individual died during follow-up WHILE continuously adherent*/
+by simid, sort: egen deathOverall = max(death) if cens_new == 0
+list simid visit maxVisit deathOverall death cens_new in 1/100 
+
+/*We don't need a new baseline dataset for Kaplan-Meier and Cox models in Stata*/
+/*But we do need to add a small amount to the maxVisit so that deaths in the first month can be counted*/
+gen maxVisit_s = maxVisit + 0.0001
+
+/*How  many  individuals  died  overall? */
+/*How  many  individuals  died  in  each  treatment  arm?*/
+/*What was the cumulative probability of mortality by 14 visits in each treatment arm?*/
+tab deathOverall if visit == 0
+tab deathOverall rand if visit == 0 
+
+/*Make sure you ran stset statment above or this code won't run*/
+stset maxVisit_s if visit == 0, failure(deathOverall)
+sts graph, by(adhr_b) risktable ylabel(0.7 (0.1) 1) xlabel(#8) xtitle(Visit) ///
+ ytitle(Survival probability) title(Kaplan-Meier Curve showing survival in placebo arm by adherence) legend(on)
 

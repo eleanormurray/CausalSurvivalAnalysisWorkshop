@@ -26,10 +26,12 @@ if(!require(survminer)) { install.packages("survminer"); require(survminer)}
 if(!require(reshape2)) { install.packages("reshape2"); require(reshape2)}
 set_here()
 
-# Code Section 1 - Data Exploration ---------------------------------------
 
 # Load the data from the trial
 trial <- read.csv(here("R/trial1.csv"), header=TRUE)
+
+
+# Code Section 1 - Data Exploration ---------------------------------------
 
 # Print the names of the available variables
 names(trial)
@@ -97,7 +99,9 @@ ggsurvplot(kmfit,
 png(filename = "ITTkm.png", width = 2*1024, height = 2*1024, units = 'px', res = 72*5)
 
 dev.off()
-# Code Section 3 - Conditional Hazard Ratios ------------------------------
+
+
+# Code Section 3a - Unadjusted Hazard Ratios ------------------------------
 
 # Data processing: create squared time variable [visit2]
 trial <- trial%>%
@@ -113,6 +117,9 @@ summary(cox_fit)
 plr_fit <- glm(death ~ visit + visit2 + rand, data = trial, family=binomial())
 coeftest(plr_fit, vcov=vcovHC(plr_fit, type="HC1")) # To get robust SE estimates
 exp(coef(plr_fit)) # to get Hazard Ratios
+
+
+# Code Section 3b - Conditional Hazard Ratios ------------------------------
 
 # Calculate the baseline covariate-adjusted hazard ratio from a Cox PH model
 adj_cox_fit <- coxph(Surv(maxVisit, deathOverall) ~ rand + mi_bin + NIHA_b + HiSerChol_b +
