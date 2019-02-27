@@ -175,6 +175,7 @@ replace visit2 = visit + 1 if newvisit ==0
 /* Step 6. Plot the results*/
 separate meanS, by(interv)
 
+
 twoway (line meanS0 visit2, sort) (line meanS1 visit2, sort), ylabel(0.75(0.1)1.0) xlabel(#8) ytitle(Survival probability) xtitle(Visit) ///
  title(Survival Curves Standardized for Baseline Covariate Distribution)
 
@@ -212,6 +213,7 @@ label values adhr_b adhr_lab
 drop if rand ==1
 
 /*We don't need the interaction terms for Stata, but we do want to create a censoring variable*/
+gen visit2 = visit*visit
 gen adh_change = 0
 replace adh_change = 1 if adhr != adhr_b
 by simid, sort: egen cens_visit = min(cond(adh_change == 1),visit, .)
@@ -255,7 +257,79 @@ tab deathOverall if visit == 0
 tab deathOverall rand if visit == 0 
 
 /*Make sure you ran stset statment above or this code won't run*/
+preserve
 stset maxVisit_s if visit == 0, failure(deathOverall)
 sts graph, by(adhr_b) risktable ylabel(0.7 (0.1) 1) xlabel(#8) xtitle(Visit) ///
  ytitle(Survival probability) title(Kaplan-Meier Curve showing survival in placebo arm by adherence) legend(on)
+restore
+
+
+/*****************************************/
+/* Code Section 6 - Weight creation      */ 
+/*****************************************/
+drop _t
+
+/* Numerator: Pr(adhr(t)=1|adhr_b, Baseline covariates)*/
+/* This model is created in data EXCLUDING the baseline visit*/
+/* Create predicted probability at each time point */
+/* (Pr(adhr(t) = 1 | adhr_b, baseline))*/
+
+logit adhr visit visit2 adhr_b mi_bin niha_b hiserchol_b hisertrigly_b hiheart_b chf_b ap_b ic_b ///
+	diur_b antihyp_b oralhyp_b cardiom_b anyqqs_b anystdep_b fveb_b vcd_b
+predict pnum, pr
+	
+/* Denominator: Pr(adhr(t)=1|adhr_b, Baseline covariates, Time-varying covariates)*/
+/* Create predicted probability at each time point */
+/* (Pr(adhr(t) = 1 | adhr_b, baseline, time-varying covariates))*/
+
+logit adhr visit visit2 adhr_b mi_bin niha_b hiserchol_b hisertrigly_b hiheart_b chf_b ap_b ic_b ///
+	diur_b antihyp_b oralhyp_b cardiom_b anyqqs_b anystdep_b fveb_b vcd_b ///
+	niha hiserchol hisertrigly hiheart chf ap ic diur antihyp oralhyp cardiom anyqqs anystdep fveb vcd
+predict pdenom, pr
+
+/*sort by simID and visit*/
+sort simid visit
+
+/*Calculate the weights*/ 
+gen numcont = 1 if visit == 0
+gen dencont = 1 if visit == 0
+replace numcont = adhr*pnum + (1-adhr)*(1-pnum)
+replace dencont = adhr*pdenom + (1-adhr)*(1-pdenom)
+
+gen _t = visit + 1
+gen k1_0 = 1 if _t == 1
+gen k1_w = 1 if _t == 1
+replace k1_0 = numcont*k1_0[_n-1] if _t > 1
+replace k1_w = dencont*k1_w[_n-1] if _t > 1
+
+gen unstabw = 1.0/k1_w
+gen stabw = k1_0/k1_w
+
+quietly summarize stabw, detail
+gen stabw_t = stabw
+replace stabw_t = r(p99) if stabw_t > r(p99)
+
+summarize unstabw, detail
+summarize stabw, detail
+summarize stabw_t, detail
+
+
+/*******************************************************/
+/* Code Section 7 - Weighted conditional hazard ratios */ 
+/*******************************************************/
+
+preserve
+drop if cens_new !=0
+	
+/* Calculate the baseline covariate-adjusted hazard ratio from a pooled logistic regression model*/
+logistic death visit visit2 adhr_b mi_bin niha_b hiserchol_b hisertrigly_b hiheart_b chf_b ap_b ic_b ///
+	diur_b antihyp_b oralhyp_b cardiom_b anyqqs_b anystdep_b fveb_b vcd_b [pweight = stabw_t], cluster(simid)
+	
+restore
+
+
+/*******************************************************/
+/* Code Section 8 - Weighted survival curves			*/ 
+/*******************************************************/
+
 

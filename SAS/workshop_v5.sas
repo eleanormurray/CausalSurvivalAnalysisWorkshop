@@ -285,6 +285,11 @@ proc genmod data = trial descending;
 	ods output ParameterEstimates = adj_plr_ix_fit;
 run;
 
+/* Step 3. Create simulated data where everyone is treated
+/* Expand baseline so it contains a visit at each time point for every individual where the baseline information has been carried forward at each time
+/* Set the treatment assignment to '1' for each individual and recreate  visit and interaction terms
+/* Calculate the predicted survival at each time and calculate survival from the cumulative product for each individual*/
+
 /*remove nuisance parameter*/
 data adj_plr_ix_fit;
 set adj_plr_ix_fit;
@@ -304,10 +309,7 @@ run;
 proc sql noprint;	
 	select DF into:NVAR separated by ' ' from nobs;	quit;
 
-/* Step 3. Create simulated data where everyone is treated
-/* Expand baseline so it contains a visit at each time point for every individual where the baseline information has been carried forward at each time
-/* Set the treatment assignment to '1' for each individual and recreate  visit and interaction terms
-/* Calculate the predicted survival at each time and calculate survival from the cumulative product for each individual*/
+
 data treated (keep = s ci rand visit);
 set trial;
 where visit = 0;

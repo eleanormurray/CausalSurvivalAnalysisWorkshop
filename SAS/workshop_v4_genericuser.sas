@@ -14,7 +14,7 @@
 %let user = %sysget(USERPROFILE);
 /*Set dlgcdir to the location of your extracted file
 /*If you unzipped the github repository in your download folder, you don't need to change anything*/
-%let rc = %sysfunc(dlgcdir("&user./Downloads/CausalSurvivalWorkshop_2019"));
+%let rc = %sysfunc(dlgcdir("&user./Downloads/CausalSurvivalWorkshop_2019/SAS"));
 libname surv "./";
 
 /* Or, set working directory to your location manually by uncommenting the code below */
@@ -503,7 +503,7 @@ proc freq data = placebo nlevels;
 	title 'Sample size by randomization arm';
 run;
 
-/* View first 100 observations of simID, visit, adhr_b, and adhr, and simID, visit, adhr_b, and adhr where adhr_b==1 to understand these variables better*/
+/* View first 30 observations of simID, visit, adhr_b, and adhr, and simID, visit, adhr_b, and adhr where adhr_b==1 to understand these variables better*/
 proc print data = placebo (obs = 30);
 var simid visit adhr_b adhr;
 title 'check data';

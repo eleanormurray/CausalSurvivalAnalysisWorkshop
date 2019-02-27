@@ -30,6 +30,9 @@ set_here()
 # Load the data from the trial
 trial <- read.csv(here("R/trial1.csv"), header=TRUE)
 
+#############################################################################
+##Exercise 2
+#############################################################################
 
 # Code Section 1 - Data Exploration ---------------------------------------
 
@@ -138,7 +141,6 @@ adj_plr_fit <- glm(death ~ visit + visit2 + rand + mi_bin + NIHA_b + HiSerChol_b
                      AnySTDep_b + FVEB_b + VCD_b, data = trial, family=binomial())
 coeftest(adj_plr_fit, vcov=vcovHC(adj_plr_fit, type="HC1")) # To get robust SE estimates
 exp(coef(adj_plr_fit))
-
 
 
 # Code Section 4 - Marginal Effects ---------------------------------------
@@ -287,10 +289,17 @@ wideres$RD[wideres$visit==15]
 wideres$CIR[wideres$visit==15]
 
 
-# Code Section 5 - Data cleaning for IPW ----------------------------------
+#############################################################################
+##Exercise 3
+#############################################################################
+
+# Code Section 5 - Data cleaning for Exercise 3 ----------------------------------
 
 # Remove all objects from the R environment EXCEPT the cleaned trial dataframe
-rm(adj_cox_fit, adj_plr_fit, adj_plr_ix_fit,baseline, both, cox_fit, kmfit, p2, placebo, plr_fit, results, treated,wideres, n)
+rm(adj_cox_fit, adj_plr_fit, adj_plr_ix_fit,baseline, both, cox_fit, kmfit, p2, placebo, plr_fit, results, treated,wideres, n, trial)
+
+# Load the data from the trial
+trial <- read.csv(here("R/trial1.csv"), header=TRUE)
 
 # Create a placebo dataset that only contains individuals with placebo
 placebo <- trial%>%  
@@ -313,6 +322,7 @@ placebo <- placebo%>%
   # Create interaction terms between exposure (adhr_b) and visit, visit2
   # Create censoring variable - indicate when individual deviates from baseline
     mutate(
+    visit2 = visit*visit,
     adhr0visit = adhr_b*visit,
     adhr0visit2 = adhr_b*visit2,
     adh_change = ifelse(adhr != adhr_b,1,0)
@@ -365,7 +375,7 @@ png(filename = "PPkm.png", width = 2*1024, height = 2*1024, units = 'px', res = 
 p3
 dev.off()
 
-###############FROM HERE -- check p3 graph against STATA & SAS output
+
 
 # Code Section 6 - Weight Creation ----------------------------------------
 
