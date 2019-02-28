@@ -307,7 +307,8 @@ placebo <- trial%>%
   
 
 # Check to see how many individuals in your dataset
-length(unique(placebo$simID))
+n <- length(unique(placebo$simID))
+n
 
 # Number of individuals who adhered versus did not adhere at visit 0
 table(placebo$adhr_b[placebo$visit==0])
@@ -477,7 +478,7 @@ plrFit_SWT <- glm(death ~ visit + visit2 + adhr_b +
                     AP_b + IC_b + DIUR_b + AntiHyp_b + 
                     OralHyp_b + CardioM_b + AnyQQS_b + 
                     AnySTDep_b + FVEB_b + VCD_b,
-                  data=placebo[placebo$visit <= placebo$maxVisit,],
+                  data=placebo[placebo$visit <= placebo$maxVisit_cens,],
                   weights = stabw_t,
                   family=quasibinomial())
 coeftest(plrFit_SWT, vcov=vcovHC(plrFit_SWT, type="HC1")) # To get robust SE estimates
@@ -497,7 +498,7 @@ plrixFit_USW <- glm(death ~ visit + visit2 + adhr_b +
                       AP_b + IC_b + DIUR_b + AntiHyp_b + 
                       OralHyp_b + CardioM_b + AnyQQS_b + 
                       AnySTDep_b + FVEB_b + VCD_b,
-                    data=placebo[placebo$visit <= placebo$maxVisit,],
+                    data=placebo[placebo$visit <= placebo$maxVisit_cens,],
                     weights = stabw_t,
                     family=quasibinomial())
 
@@ -572,6 +573,11 @@ wideres$cHR[wideres$visit==15]
 wideres$RD[wideres$visit==15]
 # Cumulative incidence ratio at end of 14 visits
 with(wideres[wideres$visit==15,], (1 - Adherers) / (1 - Nonadherers))
+
+
+
+
+
 
 
 # Extra Code - Bootstrapping Unadjustd Pooled Logistic Regression --------
