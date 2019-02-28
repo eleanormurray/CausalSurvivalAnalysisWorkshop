@@ -717,7 +717,7 @@ run;
 /*****************************************************/
 
 /*Estimate weighted hazard ratio*/
-proc genmod data= placebo (where = (visit le maxVisit))  descending;
+proc genmod data= placebo (where = (visit < maxVisit))  descending;
 	class simid;
 		model death =  visit visit2 adhr_b
         MI_bin NIHA_b HiSerChol_b 	
@@ -730,7 +730,7 @@ proc genmod data= placebo (where = (visit le maxVisit))  descending;
 		/*To get robust SE estimates*/
 		repeated subject = simid / type = ind;
 		/*To get Hazard Ratio*/
-		estimate 'PPE' adhr_b 1/exp;	
+		estimate 'Adherence' adhr_b 1/exp;	
 		title 'Placebo arm adherence comparison, with IPW';
 	run;
 
@@ -738,13 +738,13 @@ proc genmod data= placebo (where = (visit le maxVisit))  descending;
 /* "weights = stabw_t, " for stabilized fit*/
 /* "weights = unstabw, " for unstabilized fit*/
 
+
 /*********************************************/
 /* Code Section 8 - Weighted Survival Curves */
 /*********************************************/
 
 /* Step 1. Estimate weighted outcome regression with interactions and store parameter estimates*/
-
-proc genmod data= placebo (where = (visit le maxVisit)) descending ;
+proc genmod data= placebo (where = (visit < maxVisit)) descending ;
 	class simid;
 		model death =  visit visit2 adhr_b adhr0visit adhr0visit2
         MI_bin NIHA_b HiSerChol_b 	
@@ -909,9 +909,204 @@ title 'standardized survival and risk difference estimates at the end of follow-
 run;
 proc print data = results round;
 where visit = 15;
-var cHR CIR rd;
+var cHR RD CIR ;
 title 'IPW Standardized HR, CIR, and risk difference up to visit 15';
 run;
+
+
+/*********************************************/
+/* Code Section 9 - Per-protocol effect 	 */
+/*********************************************/
+data trial_full;
+set surv.trial1;
+by simid;
+	retain cens_new;
+	if first.simid then cens_new = 0;
+	if adhr ne 1 then cens_new = 1;
+
+	visit2 = visit*visit;
+    
+run;
+
+/* Need to recreate maxVisit */
+proc sort data = trial_full; by simid;run;
+data trial_full;
+set trial_full;
+by simid;
+retain vis_count;
+if first.simid then vis_count = 1;
+else do;
+	if cens_new = 0 then vis_count = vis_count + 1;
+	else vis_count = vis_count;
+end;
+run;
+
+proc means data = trial_full max noprint;
+by simid;
+var vis_count;
+output out = maxvisits (keep = simid maxVisit) max = maxVisit;
+run;
+
+data trial_full;
+merge trial_full maxvisits;
+by simid;
+run;
+
+/* Numerator: Pr(adhr(t)=1|adhr_b, Baseline covariates)
+/* This model is created in data EXCLUDING the baseline visit
+/* Create predicted probability at each time point 
+/* (Pr(adhr(t) = 1 | adhr_b, baseline))*/
+proc logistic data= trial_full (where =(visit >0 & rand = 1 )) descending;
+	model adhr = visit visit2 adhr_b
+		MI_bin NIHA_b HiSerChol_b 	
+		HiSerTrigly_b HiHeart_b CHF_b
+		AP_b IC_b DIUR_b AntiHyp_b 
+		OralHyp_b CardioM_b AnyQQS_b 
+		AnySTDep_b FVEB_b VCD_b
+		;
+	output out = nFit_1 (keep=simid visit pnum_1) p = pnum_1;
+	run;
+
+proc logistic data= trial_full (where =(visit >0 & rand = 0 )) descending;
+	model adhr = visit visit2 adhr_b
+		MI_bin NIHA_b HiSerChol_b 	
+		HiSerTrigly_b HiHeart_b CHF_b
+		AP_b IC_b DIUR_b AntiHyp_b 
+		OralHyp_b CardioM_b AnyQQS_b 
+		AnySTDep_b FVEB_b VCD_b
+		;
+	output out = nFit_0 (keep=simid visit pnum_0) p = pnum_0;
+	run;
+
+/* Denominator: Pr(adhr(t)=1|adhr_b, Baseline covariates, Time-varying covariates)
+/* Create predicted probability at each time point 
+/* (Pr(adhr(t) = 1 | adhr_b, baseline, time-varying covariates))*/
+
+proc logistic data= trial_full (where =(visit >0 & rand = 1)) descending;
+		model adhr =  visit visit2 adhr_b
+        MI_bin NIHA_b HiSerChol_b 	
+		HiSerTrigly_b HiHeart_b CHF_b
+		AP_b IC_b DIUR_b AntiHyp_b 
+		OralHyp_b CardioM_b AnyQQS_b 
+		AnySTDep_b FVEB_b VCD_b
+        
+       	NIHA	HiSerChol  HiSerTrigly HiHeart  	CHF 	
+		AP  	IC 	DIUR	AntiHyp  	OralHyp
+	  	CardioM  	AnyQQS 	AnySTDep	FVEB  	VCD 
+		;
+		output out = dFIT_1 (keep = simid visit pdenom_1)  p = pdenom_1;
+	run;
+	
+proc logistic data= trial_full (where =(visit >0 & rand = 0)) descending;
+		model adhr =  visit visit2 adhr_b
+        MI_bin NIHA_b HiSerChol_b 	
+		HiSerTrigly_b HiHeart_b CHF_b
+		AP_b IC_b DIUR_b AntiHyp_b 
+		OralHyp_b CardioM_b AnyQQS_b 
+		AnySTDep_b FVEB_b VCD_b
+        
+       	NIHA	HiSerChol  HiSerTrigly HiHeart  	CHF 	
+		AP  	IC 	DIUR	AntiHyp  	OralHyp
+	  	CardioM  	AnyQQS 	AnySTDep	FVEB  	VCD 
+		;
+		output out = dFIT_0 (keep = simid visit pdenom_0)  p = pdenom_0;
+	run;
+	
+/* Sort by simID and visit*/
+proc sort data = trial_full;
+by simid visit;
+run;
+proc sort data = nFit_1;
+by simid visit;
+run;
+proc sort data = dFit_1;
+by simid visit;
+run;
+proc sort data = nFit_0;
+by simid visit;
+run;
+proc sort data = dFit_0;
+by simid visit;
+run;
+
+/*Calculate the weights*/ 
+data trial_full;
+merge trial_full nFit_1 dFit_1  nFit_0 dFit_0;
+by simid visit;
+
+if first.simid then do;
+
+	k1_0 = 1.0;
+	k1_w = 1.0;
+end;
+
+retain k1_0 k1_w;
+
+else do;
+
+	if rand = 1 then do;
+		numCont = adhr*pnum_1 +(1-adhr)*(1-pnum_1);
+		denCont = adhr*pdenom_1 +(1-adhr)*(1-pdenom_1);
+		k1_0 = k1_0*numCont;
+		k1_w = k1_w*denCont;
+	end;
+	else if rand = 0 then do;
+		numCont = adhr*pnum_0 +(1-adhr)*(1-pnum_0);
+		denCont = adhr*pdenom_0 +(1-adhr)*(1-pdenom_0);
+		k1_0 = k1_0*numCont;
+		k1_w = k1_w*denCont;
+	end;
+
+end;
+unstabw = 1.0/k1_w;
+stabw = k1_0/k1_w;
+run;
+
+/*Create truncated weights*/
+proc means data = trial_full p99 noprint;
+var stabw;
+output out=pctl (keep=p99) p99=p99;
+run;
+data temp;
+set pctl;
+call symput ('cutoff', p99);
+run;
+data trial_full;
+set trial_full;
+stabw_t = stabw;
+if stabw>%sysevalf(&cutoff) then do;
+	stabw_t = %sysevalf(&cutoff);
+end;
+run;
+
+/*Check weights*/
+proc means data = trial_full n mean min max p99 std median p25 p75 nmiss;
+var unstabw stabw stabw_t;
+title 'Distribution of weights';
+run;
+
+/*Estimate weighted hazard ratio*/
+proc genmod data= trial_full (where = (visit < maxVisit))  descending;
+	class simid;
+		model death =  visit visit2 rand
+        MI_bin NIHA_b HiSerChol_b 	
+		HiSerTrigly_b HiHeart_b CHF_b
+		AP_b IC_b DIUR_b AntiHyp_b 
+		OralHyp_b CardioM_b AnyQQS_b 
+		AnySTDep_b FVEB_b VCD_b /link = logit dist = bin ;
+		
+		weight stabw_t;
+		/*To get robust SE estimates*/
+		repeated subject = simid / type = ind;
+		/*To get Hazard Ratio*/
+		estimate 'PPE' rand 1/exp;	
+		title 'Per-protocol effect, with IPW';
+	run;
+
+
+
+
+
 
 /*********************************************************************************************************/
 /**********************************Extra code: Exercise 2 bootstraps**************************************/

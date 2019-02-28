@@ -186,6 +186,7 @@ quietly summarize meanS_14 if(rand==0 & visit ==14)
 matrix input observe = (0, `r(mean)')
 quietly summarize meanS_14 if(rand==1 & visit == 14)
 matrix observe = (observe\1, `r(mean)')
+quietly summarize ratio if(rand==1 & visit == 14)
 matrix observe = (observe\2, (log(observe[2,2]))/(log(observe[1,2])))
 matrix observe = (observe\3, ((1-observe[2,2])/(1-observe[1,2])))
 matrix observe = (observe\4, ((1-observe[2,2])-(1-observe[1,2])))
@@ -193,6 +194,7 @@ matrix rownames observe = Surv_placebo Surv_treatment cHR CIR risk_diff
 
 matrix list observe
 restore
+
 
 
 /*********************************************************************************************************/
@@ -213,7 +215,6 @@ label values adhr_b adhr_lab
 drop if rand ==1
 
 /*We don't need the interaction terms for Stata, but we do want to create a censoring variable*/
-gen visit2 = visit*visit
 gen adh_change = 0
 replace adh_change = 1 if adhr != adhr_b
 by simid, sort: egen cens_visit = min(cond(adh_change == 1),visit, .)
@@ -273,17 +274,17 @@ restore
 /* Create predicted probability at each time point */
 /* (Pr(adhr(t) = 1 | adhr_b, baseline))*/
 
-logit adhr visit visit2 adhr_b mi_bin niha_b hiserchol_b hisertrigly_b hiheart_b chf_b ap_b ic_b ///
-	diur_b antihyp_b oralhyp_b cardiom_b anyqqs_b anystdep_b fveb_b vcd_b, cluster(simid)
+logit adhr visit c.visit#c.visit  adhr_b mi_bin niha_b hiserchol_b hisertrigly_b hiheart_b chf_b ap_b ic_b ///
+	diur_b antihyp_b oralhyp_b cardiom_b anyqqs_b anystdep_b fveb_b vcd_b if visit > 0
 predict pnum, pr
 	
 /* Denominator: Pr(adhr(t)=1|adhr_b, Baseline covariates, Time-varying covariates)*/
 /* Create predicted probability at each time point */
 /* (Pr(adhr(t) = 1 | adhr_b, baseline, time-varying covariates))*/
 
-logit adhr visit visit2 adhr_b mi_bin niha_b hiserchol_b hisertrigly_b hiheart_b chf_b ap_b ic_b ///
+logit adhr visit c.visit#c.visit  adhr_b mi_bin niha_b hiserchol_b hisertrigly_b hiheart_b chf_b ap_b ic_b ///
 	diur_b antihyp_b oralhyp_b cardiom_b anyqqs_b anystdep_b fveb_b vcd_b ///
-	niha hiserchol hisertrigly hiheart chf ap ic diur antihyp oralhyp cardiom anyqqs anystdep fveb vcd, cluster(simid)
+	niha hiserchol hisertrigly hiheart chf ap ic diur antihyp oralhyp cardiom anyqqs anystdep fveb vcd if visit > 0
 predict pdenom, pr
 
 /*sort by simID and visit*/
@@ -321,7 +322,11 @@ summarize stabw_t, detail
 /*Remember to restrict to only the uncensored person-time*/
 /*Also remember to use the weights, as well as robust standard errors*/
 /*Note that we are using baseline adherence not adherence over time since we are interested continuously maintaining an adherence level*/
-logistic death visit visit2 adhr_b mi_bin niha_b hiserchol_b hisertrigly_b hiheart_b chf_b ap_b ic_b ///
+logistic death visit c.visit#c.visit adhr_b mi_bin niha_b hiserchol_b hisertrigly_b hiheart_b chf_b ap_b ic_b ///
+	diur_b antihyp_b oralhyp_b cardiom_b anyqqs_b anystdep_b fveb_b vcd_b if cens_new == 0 [pweight = stabw_t], cluster(simid)
+
+/*Or, to get the coefficient for adherence we can use the LOGIT command*/
+logit death visit c.visit#c.visit adhr_b mi_bin niha_b hiserchol_b hisertrigly_b hiheart_b chf_b ap_b ic_b ///
 	diur_b antihyp_b oralhyp_b cardiom_b anyqqs_b anystdep_b fveb_b vcd_b if cens_new == 0 [pweight = stabw_t], cluster(simid)
 
 
@@ -334,9 +339,8 @@ logistic death visit visit2 adhr_b mi_bin niha_b hiserchol_b hisertrigly_b hihea
 /* Calculate the baseline covariate-adjusted hazard ratio from a pooled logistic regression model*/
 /*Remember to restrict to only the uncensored person-time*/
 /*Also remember to use the weights, as well as robust standard errors*/
-logistic death visit visit2 adhr_b adhr_b#c.visit adhr_b#c.visit2 mi_bin niha_b hiserchol_b hisertrigly_b hiheart_b chf_b ap_b ic_b ///
+logistic death visit c.visit#c.visit adhr_b adhr_b#c.visit adhr_b#c.visit#c.visit mi_bin niha_b hiserchol_b hisertrigly_b hiheart_b chf_b ap_b ic_b ///
 	diur_b antihyp_b oralhyp_b cardiom_b anyqqs_b anystdep_b fveb_b vcd_b if cens_new == 0 [pweight = stabw_t], cluster(simid)
-
 
 /*Now, we standardize as before. The only difference is we always want adhr_b to be 1 or 0*/
 
@@ -358,7 +362,7 @@ replace  adhr_b = interv
 /* Calculate the predicted survival at each time and calculate survival from the cumulative product for each individual*/
 predict pevent_k, pr 
 gen psurv_k = 1-pevent_k 
-keep simid visit rand interv psurv_k
+keep simid visit adhr_b interv psurv_k
 sort simid interv visit
 gen _t = visit + 1
 gen psurv = psurv_k if _t == 1
@@ -366,7 +370,7 @@ bysort simid interv: replace psurv = psurv_k*psurv[_t-1] if _t > 1
 
 
 /* Step 5. Calculate standardized survival at each time*/
-/* Create concatenated dataset, only keep s, rand, and visit*/
+/* Create concatenated dataset, only keep s,adhr_b, and visit*/
 by interv visit, sort: summarize psurv
 keep simid psurv adhr_b interv visit 
 
@@ -383,16 +387,15 @@ replace visit2 = visit + 1 if newvisit ==0
 /* Step 6. Plot the results*/
 separate meanS, by(interv)
 
-
 twoway (line meanS0 visit2, sort) (line meanS1 visit2, sort), ylabel(0.75(0.1)1.0) xlabel(#8) ytitle(Survival probability) xtitle(Visit) ///
  title(Survival Curves Standardized for Baseline Covariate Distribution)
 
 
 /* Step 7. Print risk difference and hazard ratio at 14 weeks*/
-bysort rand: egen meanS_14 = mean(psurv) if visit == 14
-quietly summarize meanS_14 if(rand==0 & visit ==14)
+bysort adhr_b: egen meanS_14 = mean(psurv) if visit == 14
+quietly summarize meanS_14 if(adhr_b==0 & visit ==14)
 matrix input observe = (0, `r(mean)')
-quietly summarize meanS_14 if(rand==1 & visit == 14)
+quietly summarize meanS_14 if(adhr_b==1 & visit == 14)
 matrix observe = (observe\1, `r(mean)')
 matrix observe = (observe\2, (log(observe[2,2]))/(log(observe[1,2])))
 matrix observe = (observe\3, ((1-observe[2,2])/(1-observe[1,2])))
@@ -401,4 +404,92 @@ matrix rownames observe = Surv_placebo Surv_treatment cHR CIR risk_diff
 
 matrix list observe
 
+
+
+/*******************************************************/
+/* Code Section 9 - Per-protocol effect					*/ 
+/*******************************************************/
+
+use "trial1.dta", clear
+
+/*Create some nice labels*/
+label define rand_lab 0 "placebo" 1 "treatment"
+label values rand rand_lab
+
+
+/*We don't need the interaction terms for Stata, but we do want to create a censoring variable*/
+/*Now, we censor everyone the first time they stop adhering in both trial arms*/
+by simid, sort: egen cens_visit = min(cond(adhr == 0),visit, .)
+gen cens_new = 0
+replace cens_new = 1 if visit == cens_visit
+replace cens_new = . if visit > cens_visit
+/*check*/
+list simid visit adhr adhr_b cens_new in 1/100
+
+/*Weights separately by trial arm*/
+/* Numerator: Pr(adhr(t)=1|adhr_b, Baseline covariates)*/
+/* This model is created in data EXCLUDING the baseline visit*/
+/* Create predicted probability at each time point */
+/* (Pr(adhr(t) = 1 | adhr_b, baseline))*/
+
+logit adhr visit c.visit#c.visit adhr_b mi_bin niha_b hiserchol_b hisertrigly_b hiheart_b chf_b ap_b ic_b ///
+	diur_b antihyp_b oralhyp_b cardiom_b anyqqs_b anystdep_b fveb_b vcd_b if rand == 1 & visit > 0, cluster(simid)
+predict pnum_1 if rand == 1, pr
+
+
+logit adhr visit c.visit#c.visit adhr_b mi_bin niha_b hiserchol_b hisertrigly_b hiheart_b chf_b ap_b ic_b ///
+	diur_b antihyp_b oralhyp_b cardiom_b anyqqs_b anystdep_b fveb_b vcd_b if rand == 0 & visit > 0, cluster(simid)
+predict pnum_0 if rand == 0, pr
+	
+/* Denominator: Pr(adhr(t)=1|adhr_b, Baseline covariates, Time-varying covariates)*/
+/* Create predicted probability at each time point */
+/* (Pr(adhr(t) = 1 | adhr_b, baseline, time-varying covariates))*/
+
+logit adhr visit c.visit#c.visit adhr_b mi_bin niha_b hiserchol_b hisertrigly_b hiheart_b chf_b ap_b ic_b ///
+	diur_b antihyp_b oralhyp_b cardiom_b anyqqs_b anystdep_b fveb_b vcd_b ///
+	niha hiserchol hisertrigly hiheart chf ap ic diur antihyp oralhyp cardiom anyqqs anystdep fveb vcd if rand == 1 & visit > 0, cluster(simid)
+predict pdenom_1 if rand == 1, pr
+
+
+logit adhr visit c.visit#c.visit adhr_b mi_bin niha_b hiserchol_b hisertrigly_b hiheart_b chf_b ap_b ic_b ///
+	diur_b antihyp_b oralhyp_b cardiom_b anyqqs_b anystdep_b fveb_b vcd_b ///
+	niha hiserchol hisertrigly hiheart chf ap ic diur antihyp oralhyp cardiom anyqqs anystdep fveb vcd if rand == 0 & visit > 0, cluster(simid)
+predict pdenom_0 if rand == 0, pr
+
+/*sort by simID and visit*/
+sort simid visit
+
+/*Calculate the weights*/ 
+gen numcont = 1 if visit == 0
+gen dencont = 1 if visit == 0
+replace numcont = adhr*pnum_1 + (1-adhr)*(1-pnum_1) if rand == 1
+replace dencont = adhr*pdenom_1 + (1-adhr)*(1-pdenom_1) if rand == 1
+replace numcont = adhr*pnum_0 + (1-adhr)*(1-pnum_0) if rand == 0
+replace dencont = adhr*pdenom_0 + (1-adhr)*(1-pdenom_0) if rand == 0
+
+gen _t = visit + 1
+gen k1_0 = 1 if _t == 1
+gen k1_w = 1 if _t == 1
+replace k1_0 = numcont*k1_0[_n-1] if _t > 1
+replace k1_w = dencont*k1_w[_n-1] if _t > 1
+
+gen unstabw = 1.0/k1_w
+gen stabw = k1_0/k1_w
+
+
+quietly summarize stabw, detail
+gen stabw_t = stabw
+replace stabw_t = r(p99) if stabw_t > r(p99)
+
+summarize unstabw, detail
+summarize stabw, detail
+summarize stabw_t, detail
+
+
+/* Calculate the baseline covariate-adjusted hazard ratio from a pooled logistic regression model*/
+/*Remember to restrict to only the uncensored person-time*/
+/*Also remember to use the weights, as well as robust standard errors*/
+/*Note that we have replaced adherence with randomization arm as the exposure*/
+logistic death visit c.visit#c.visit rand mi_bin niha_b hiserchol_b hisertrigly_b hiheart_b chf_b ap_b ic_b ///
+	diur_b antihyp_b oralhyp_b cardiom_b anyqqs_b anystdep_b fveb_b vcd_b if cens_new !=. [pweight = stabw_t] , cluster(simid)
 

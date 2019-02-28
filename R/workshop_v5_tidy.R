@@ -24,6 +24,8 @@ if(!require(ggplot2)) { install.packages("ggplot2"); require(ggplot2)}
 if(!require(survminer)) { install.packages("survminer"); require(survminer)}
 # To easily change data from long to wide
 if(!require(reshape2)) { install.packages("reshape2"); require(reshape2)}
+# For tidy code
+if(!require(tidyverse)){ install.packages("tidyverse"); require(tidyverse)}
 set_here()
 
 
@@ -372,7 +374,7 @@ p3 <-
            ggtheme = theme_bw())
 p3
 
-png(filename = "PPkm.png", width = 2*1024, height = 2*1024, units = 'px', res = 72*5)
+png(filename = "PlaceboKM.png", width = 2*1024, height = 2*1024, units = 'px', res = 72*5)
 p3
 dev.off()
 
@@ -419,20 +421,29 @@ placebo <- placebo[order(placebo$simID, placebo$visit),]
 
 # Contribution from adhr(t) = 0 is 1 - p
 # Contribution from adhr(t) = 1 is p
-placebo$numCont <- with(placebo, adhr*pnum + (1-adhr)*(1-pnum))
-placebo$denCont <- with(placebo, adhr*pdenom + (1-adhr)*(1-pdenom))
 
-# Set contribution at baseline visit to 1
-placebo$numCont[placebo$visit==0] <- 1; placebo$denCont[placebo$visit==0] <- 1
 
-# Numerator
-placebo$k1_0 <- with(placebo, ave(numCont, simID, FUN=cumprod))
-# Denominator
-placebo$k1_w <- with(placebo, ave(denCont, simID, FUN=cumprod))
-
-# Create both stabilized and unstabilized weights
-placebo$stabw <- with(placebo, k1_0 / k1_w)
-placebo$unstabw <- with(placebo, 1 / k1_w)
+# Contribution from adhr(t) = 0 is 1 - p
+# Contribution from adhr(t) = 1 is p
+placebo <- placebo %>% 
+  mutate(
+    numCont = adhr*pnum + (1-adhr)*(1-pnum),
+    denCont = adhr*pdenom + (1-adhr)*(1-pdenom),
+    
+    numCont = ifelse(visit == 0, 1, numCont),
+    denCont = ifelse(visit == 0, 1, denCont)
+  ) %>% 
+  group_by(simID) %>% 
+  mutate(  
+    #numerator
+    k1_0 = cumprod(numCont),
+    k1_w = cumprod(denCont)
+  ) %>% 
+  dplyr::ungroup() %>% 
+  mutate(
+    stabw = k1_0/ k1_w,
+    unstabw = 1 /k1_w
+  )
 
 # Check the weights
 # Can do this with built-in functions
@@ -459,14 +470,15 @@ wt_check_fxn <- function(x, d){
                    Q.995 = quantile(x, p=0.995),
                    Max = max(x, na.rm=T) ), digits=d)
 }
-wt_check_fxn(placebo$stabw, 3)
-wt_check_fxn(placebo$unstabw, 3)
 
 # To prevent high weights from too much influence, truncate
 threshold <- quantile(placebo$stabw, 0.99) # Here we chose 99th %tile
 placebo$stabw_t <- placebo$stabw
 placebo$stabw_t[placebo$stabw > threshold] <- threshold
 
+
+wt_check_fxn(placebo$unstabw, 3)
+wt_check_fxn(placebo$stabw, 3)
 wt_check_fxn(placebo$stabw_t, 3)
 
 # Code Section 7 - Weighted Conditional Hazard Ratios ---------------------
@@ -529,11 +541,13 @@ nonadherers$s <- ave(nonadherers$p, nonadherers$simID, FUN=cumprod)
 # Step 3. Calculate standardized survival at each time
 # Create concatenated dataset, only keep s, adhr_b, and visit
 both <- rbind(adherers, nonadherers)
-both <- both[,c('s', 'adhr_b', 'visit')]
+both <- both[,c('s', 'adhr_b', 'visit', 'p')]
+
+
 
 # Calculate the mean survival at each visit within each adherer group
 results <- aggregate(s ~ visit + adhr_b, FUN=mean, data=both)
-
+summary(results$s)
 # Edit results data frame to reflect that our estimates are for the END of the interval [t, t+1)
 # Add a row for each of Placebo and Treated where survival at time 0 is 1.
 results$visit <- results$visit + 1
@@ -554,7 +568,7 @@ p4 <- ggplot(results, aes(x=visit, y=s)) +
   theme_bw() +
   theme(legend.position="bottom") 
 p4
-png(filename = "PPsurv.png", width = 2*1060, height = 2*1024, units = 'px', res = 72*5)
+png(filename = "PlaceboSurv.png", width = 2*1060, height = 2*1024, units = 'px', res = 72*5)
 p4
 dev.off()
 
@@ -567,6 +581,8 @@ wideres$logRatio <- log(wideres$Adherers) / log(wideres$Nonadherers)
 wideres$logRatio[1] <- NA
 wideres$cHR <- sapply(0:15, FUN=function(x){mean(wideres$logRatio[wideres$visit <= x], na.rm=T)})
 
+wideres
+
 # Overall Hazard Ratio
 wideres$cHR[wideres$visit==15]
 # Risk difference at 14 visits
@@ -575,11 +591,179 @@ wideres$RD[wideres$visit==15]
 with(wideres[wideres$visit==15,], (1 - Adherers) / (1 - Nonadherers))
 
 
+# Code Section 9 - Per-protocol effect  -------------------------------
+
+# Remove all objects from the R environment EXCEPT the cleaned trial dataframe
+rm(adherers, baseline, baseline_p, both, dFit, kmfit2, nFit, nonadherers, p3, p4, placebo, plrFit_SWT, plrixFit_USW, results, trial, wideres, n)
+
+# Load the data from the trial
+trial_full <- read.csv(here("R/trial1.csv"), header=TRUE)
+
+
+n <- length(unique(trial_full$simID))
+n
+
+#Data set up 
+trial_full <- trial_full%>%
+  # Create interaction terms between exposure (adhr_b) and visit, visit2
+  # Create censoring variable - indicate when individual deviates from baseline
+  
+  mutate(
+    visit2 = visit*visit,
+    adh_change = ifelse(adhr == 0,1,0)
+  )%>%
+  # Need to recreate maxVisit and deathOverall - slightly more complicated now
+  group_by(simID)%>%
+  mutate(
+    cens_visit = ifelse(is.na((which(adh_change %in% 1)[1])), max(visit),(which(adh_change %in% 1)[1]- 1)),
+    cens_new = ifelse(cens_visit == visit, 1, ifelse(cens_visit < visit, NA , 0)),
+    
+    maxVisit_cens = ifelse(cens_visit == 14, 14, cens_visit )
+  )%>%
+  dplyr::ungroup()
+
+
+# Numerator: Pr(adhr(t)=1|adhr_b, Baseline covariates)
+# This model is created in data EXCLUDING the baseline visit
+trial_uncens <- trial_full%>%
+  dplyr::filter(visit > 0)
+
+nFit_1 <- glm(adhr ~ visit + visit2 + adhr_b + 
+              mi_bin + NIHA_b + HiSerChol_b +
+              HiSerTrigly_b + HiHeart_b + CHF_b + 
+              AP_b + IC_b + DIUR_b + AntiHyp_b + 
+              OralHyp_b + CardioM_b + AnyQQS_b + 
+              AnySTDep_b + FVEB_b + VCD_b,
+            data=trial_uncens[trial_uncens$rand == 1,],
+            family=binomial())
+
+
+nFit_0 <- glm(adhr ~ visit + visit2 + adhr_b + 
+                mi_bin + NIHA_b + HiSerChol_b +
+                HiSerTrigly_b + HiHeart_b + CHF_b + 
+                AP_b + IC_b + DIUR_b + AntiHyp_b + 
+                OralHyp_b + CardioM_b + AnyQQS_b + 
+                AnySTDep_b + FVEB_b + VCD_b,
+              data=trial_uncens[trial_uncens$rand == 0,],
+              family=binomial())
+
+# Create predicted probability at each time point 
+# (Pr(adhr(t) = 1 | adhr_b, baseline, rand))
+trial_full$pnum_1 <- predict(nFit_1, newdata=trial_full, type='response')
+trial_full$pnum_0 <- predict(nFit_0, newdata=trial_full, type='response')
+
+# Denominator: Pr(adhr(t)=1|adhr_b, Baseline covariates, Time-varying covariates)
+dFit_1 <- glm(adhr ~ visit + visit2 + adhr_b + 
+              mi_bin + NIHA_b + HiSerChol_b +
+              HiSerTrigly_b + HiHeart_b + CHF_b + 
+              AP_b + IC_b + DIUR_b + AntiHyp_b + 
+              OralHyp_b + CardioM_b + AnyQQS_b + 
+              AnySTDep_b + FVEB_b + VCD_b +
+              NIHA + HiSerChol +
+              HiSerTrigly + HiHeart + CHF +
+              AP + IC + DIUR + AntiHyp +
+              OralHyp + CardioM + AnyQQS +
+              AnySTDep + FVEB + VCD,
+              data=trial_uncens[trial_uncens$rand == 1,],
+            family=binomial())
+dFit_0 <- glm(adhr ~ visit + visit2 + adhr_b + 
+                mi_bin + NIHA_b + HiSerChol_b +
+                HiSerTrigly_b + HiHeart_b + CHF_b + 
+                AP_b + IC_b + DIUR_b + AntiHyp_b + 
+                OralHyp_b + CardioM_b + AnyQQS_b + 
+                AnySTDep_b + FVEB_b + VCD_b +
+                NIHA + HiSerChol +
+                HiSerTrigly + HiHeart + CHF +
+                AP + IC + DIUR + AntiHyp +
+                OralHyp + CardioM + AnyQQS +
+                AnySTDep + FVEB + VCD,
+              data=trial_uncens[trial_uncens$rand == 0,],
+              family=binomial())
+# Create predicted probability at each time point 
+# (Pr(adhr(t) = 1 | adhr_b, baseline, time-varying covariates))
+trial_full$pdenom_1 <-  predict(dFit_1, newdata=trial_full, type='response')
+trial_full$pdenom_0 <-  predict(dFit_0, newdata=trial_full, type='response')
+
+
+# Sort placebo by simID and visit
+trial_full <- trial_full[order(trial_full$simID, trial_full$visit),]
+
+# Contribution from adhr(t) = 0 is 1 - p
+# Contribution from adhr(t) = 1 is p
+trial_full <- trial_full %>% 
+  mutate(
+    numCont = ifelse(rand == 1, (adhr*pnum_1 + (1-adhr)*(1-pnum_1)),(adhr*pnum_0 + (1-adhr)*(1-pnum_0)) ),
+    denCont = ifelse(rand == 1, (adhr*pdenom_1 + (1-adhr)*(1-pdenom_1)),(adhr*pdenom_0 + (1-adhr)*(1-pdenom_0))),
+    
+    numCont = ifelse(visit == 0, 1, numCont),
+    denCont = ifelse(visit == 0, 1, denCont)
+  ) %>% 
+  group_by(simID) %>% 
+  mutate(  
+    #numerator
+    k1_0 = cumprod(numCont),
+    k1_w = cumprod(denCont)
+  ) %>% 
+  dplyr::ungroup() %>% 
+  mutate(
+    stabw = k1_0/ k1_w,
+    unstabw = 1 /k1_w
+  )
+
+
+# Check the weights
+# Can do this with built-in functions
+summary(trial_full$stabw); quantile(trial_full$stabw, p=c(0.01, 0.10, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99, 0.995))
+summary(trial_full$unstabw); quantile(trial_full$unstabw, p=c(0.01, 0.10, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99, 0.995))
+
+# Or write something for yourself
+wt_check_fxn <- function(x, d){
+  # x - weight vector
+  # d - number of digits to round to
+  round(data.frame(N = length(x),
+                   Missing = sum(is.na(x)),
+                   Distinct = length(unique(x)),
+                   Mean = mean(x, na.rm=T),
+                   SD = sd(x, na.rm=T),
+                   Min = min(x, na.rm=T),
+                   Q.01 = quantile(x, p=0.01),
+                   Q.25 = quantile(x, p=0.25),
+                   Q.50 = quantile(x, p=0.5),
+                   Q.75 = quantile(x, p=0.75),
+                   Q.90 = quantile(x, p=0.9),
+                   Q.95 = quantile(x, p=0.95),
+                   Q.99 = quantile(x, p=0.99),
+                   Q.995 = quantile(x, p=0.995),
+                   Max = max(x, na.rm=T) ), digits=d)
+}
+
+# To prevent high weights from too much influence, truncate
+threshold <- quantile(trial_full$stabw, 0.99) # Here we chose 99th %tile
+trial_full$stabw_t <- trial_full$stabw
+trial_full$stabw_t[trial_full$stabw > threshold] <- threshold
+
+wt_check_fxn(trial_full$unstabw, 3)
+wt_check_fxn(trial_full$stabw, 3)
+wt_check_fxn(trial_full$stabw_t, 3)
+
+# Weighted outcome model for conditional hazard ratio
+plrFit_SWT <- glm(death ~ visit + visit2 + rand + 
+                    mi_bin + NIHA_b + HiSerChol_b +
+                    HiSerTrigly_b + HiHeart_b + CHF_b + 
+                    AP_b + IC_b + DIUR_b + AntiHyp_b + 
+                    OralHyp_b + CardioM_b + AnyQQS_b + 
+                    AnySTDep_b + FVEB_b + VCD_b,
+                  data=trial_full[trial_full$visit <= trial_full$maxVisit_cens,],
+                  weights = stabw_t,
+                  family=quasibinomial())
+summary(plrFit_SWT)
+coeftest(plrFit_SWT, vcov=vcovHC(plrFit_SWT, type="HC1")) # To get robust SE estimates
+exp(coef(plrFit_SWT)) # to get Hazard Ratios
 
 
 
 
-
+############################################################################
 # Extra Code - Bootstrapping Unadjustd Pooled Logistic Regression --------
 
 # Remove all objects from the R environment EXCEPT the cleaned trial dataframe
