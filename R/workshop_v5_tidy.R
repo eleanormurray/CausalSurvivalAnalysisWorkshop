@@ -331,7 +331,7 @@ placebo <- placebo%>%
   # Need to recreate maxVisit and deathOverall - slightly more complicated now
   group_by(simID)%>%
   mutate(
-    cens_visit = ifelse(is.na((which(adh_change %in% 1)[1])), max(visit),(which(adh_change %in% 1)[1]- 1)),
+    cens_visit = ifelse(is.na((which(adh_change %in% 1)[1])), max(visit),(which(adh_change %in% 1)[1]- 2)),
     cens_new = ifelse(cens_visit == visit, 1, ifelse(cens_visit < visit, NA , 0)),
     
     maxVisit_cens = ifelse(cens_visit == 14, 14, cens_visit ),

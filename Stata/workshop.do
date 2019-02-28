@@ -267,7 +267,6 @@ restore
 /*****************************************/
 /* Code Section 6 - Weight creation      */ 
 /*****************************************/
-drop _t
 
 /* Numerator: Pr(adhr(t)=1|adhr_b, Baseline covariates)*/
 /* This model is created in data EXCLUDING the baseline visit*/
@@ -275,7 +274,7 @@ drop _t
 /* (Pr(adhr(t) = 1 | adhr_b, baseline))*/
 
 logit adhr visit visit2 adhr_b mi_bin niha_b hiserchol_b hisertrigly_b hiheart_b chf_b ap_b ic_b ///
-	diur_b antihyp_b oralhyp_b cardiom_b anyqqs_b anystdep_b fveb_b vcd_b
+	diur_b antihyp_b oralhyp_b cardiom_b anyqqs_b anystdep_b fveb_b vcd_b, cluster(simid)
 predict pnum, pr
 	
 /* Denominator: Pr(adhr(t)=1|adhr_b, Baseline covariates, Time-varying covariates)*/
@@ -284,7 +283,7 @@ predict pnum, pr
 
 logit adhr visit visit2 adhr_b mi_bin niha_b hiserchol_b hisertrigly_b hiheart_b chf_b ap_b ic_b ///
 	diur_b antihyp_b oralhyp_b cardiom_b anyqqs_b anystdep_b fveb_b vcd_b ///
-	niha hiserchol hisertrigly hiheart chf ap ic diur antihyp oralhyp cardiom anyqqs anystdep fveb vcd
+	niha hiserchol hisertrigly hiheart chf ap ic diur antihyp oralhyp cardiom anyqqs anystdep fveb vcd, cluster(simid)
 predict pdenom, pr
 
 /*sort by simID and visit*/
@@ -318,18 +317,88 @@ summarize stabw_t, detail
 /* Code Section 7 - Weighted conditional hazard ratios */ 
 /*******************************************************/
 
-preserve
-drop if cens_new !=0
-	
 /* Calculate the baseline covariate-adjusted hazard ratio from a pooled logistic regression model*/
+/*Remember to restrict to only the uncensored person-time*/
+/*Also remember to use the weights, as well as robust standard errors*/
+/*Note that we are using baseline adherence not adherence over time since we are interested continuously maintaining an adherence level*/
 logistic death visit visit2 adhr_b mi_bin niha_b hiserchol_b hisertrigly_b hiheart_b chf_b ap_b ic_b ///
-	diur_b antihyp_b oralhyp_b cardiom_b anyqqs_b anystdep_b fveb_b vcd_b [pweight = stabw_t], cluster(simid)
-	
-restore
+	diur_b antihyp_b oralhyp_b cardiom_b anyqqs_b anystdep_b fveb_b vcd_b if cens_new == 0 [pweight = stabw_t], cluster(simid)
 
 
 /*******************************************************/
 /* Code Section 8 - Weighted survival curves			*/ 
 /*******************************************************/
+
+/*First re-run the outcome model but including interactions between adherence and time*/
+
+/* Calculate the baseline covariate-adjusted hazard ratio from a pooled logistic regression model*/
+/*Remember to restrict to only the uncensored person-time*/
+/*Also remember to use the weights, as well as robust standard errors*/
+logistic death visit visit2 adhr_b adhr_b#c.visit adhr_b#c.visit2 mi_bin niha_b hiserchol_b hisertrigly_b hiheart_b chf_b ap_b ic_b ///
+	diur_b antihyp_b oralhyp_b cardiom_b anyqqs_b anystdep_b fveb_b vcd_b if cens_new == 0 [pweight = stabw_t], cluster(simid)
+
+
+/*Now, we standardize as before. The only difference is we always want adhr_b to be 1 or 0*/
+
+/* Create simulated data where everyone is adherent*/
+/* Create simulated data where everyone is non-adherent*/
+
+/* NOTE: in Stata it's easies to do these steps together*/
+/* Expand baseline so it contains a visit at each time point for every individual
+	where the baseline information has been carried forward at each time*/
+drop if visit != 0 
+expand 15 if visit ==0 
+bysort simid: replace visit = _n -1 
+
+/* Set the adherence to '1' for each individual and recreate  visit and interaction terms*/
+/* Set the adherence to '0' for each individual and recreate  visit and interaction terms*/
+expand 2, generate(interv) 
+replace  adhr_b = interv 
+
+/* Calculate the predicted survival at each time and calculate survival from the cumulative product for each individual*/
+predict pevent_k, pr 
+gen psurv_k = 1-pevent_k 
+keep simid visit rand interv psurv_k
+sort simid interv visit
+gen _t = visit + 1
+gen psurv = psurv_k if _t == 1
+bysort simid interv: replace psurv = psurv_k*psurv[_t-1] if _t > 1
+
+
+/* Step 5. Calculate standardized survival at each time*/
+/* Create concatenated dataset, only keep s, rand, and visit*/
+by interv visit, sort: summarize psurv
+keep simid psurv adhr_b interv visit 
+
+/* Calculate the mean survival at each visit within each treatment arm*/
+bysort interv visit: egen meanS = mean(psurv)
+
+/* Edit results to reflect that our estimates are for the END of the interval [t, t+1)*/
+/* The code below duplicates baseline, sets survival to 100% in the duplicate and adds 1 to the visit count for each other record*/
+expand 2 if visit == 0, generate(newvisit)
+replace meanS = 1 if newvisit ==1
+gen visit2 = 0 if newvisit == 1
+replace visit2 = visit + 1 if newvisit ==0
+
+/* Step 6. Plot the results*/
+separate meanS, by(interv)
+
+
+twoway (line meanS0 visit2, sort) (line meanS1 visit2, sort), ylabel(0.75(0.1)1.0) xlabel(#8) ytitle(Survival probability) xtitle(Visit) ///
+ title(Survival Curves Standardized for Baseline Covariate Distribution)
+
+
+/* Step 7. Print risk difference and hazard ratio at 14 weeks*/
+bysort rand: egen meanS_14 = mean(psurv) if visit == 14
+quietly summarize meanS_14 if(rand==0 & visit ==14)
+matrix input observe = (0, `r(mean)')
+quietly summarize meanS_14 if(rand==1 & visit == 14)
+matrix observe = (observe\1, `r(mean)')
+matrix observe = (observe\2, (log(observe[2,2]))/(log(observe[1,2])))
+matrix observe = (observe\3, ((1-observe[2,2])/(1-observe[1,2])))
+matrix observe = (observe\4, ((1-observe[2,2])-(1-observe[1,2])))
+matrix rownames observe = Surv_placebo Surv_treatment cHR CIR risk_diff
+
+matrix list observe
 
 
