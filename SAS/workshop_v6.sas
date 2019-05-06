@@ -464,7 +464,6 @@ run;
 /* Code Section 5 - Data cleaning for IPW*/ 
 /*****************************************/
 
-/* Create a placebo dataset that only contains individuals assigned to placebo
 /* Create interaction terms between exposure (rand) and visit, visit2
 /* Create censoring variable - indicate when individual deviates from baseline*/
 data trial_full;
@@ -472,22 +471,8 @@ set surv.trial1;
 by simid;
 	retain cens_new;
 	if first.simid then cens_new = 0;
-	if adhr ne 1 then cens_new = 1;
-
-	visit2 = visit*visit;
-	randvisit = rand*visit;
-	randvisit2 = rand*visit2;
-    
-run;
-
-proc print data = trial_full (obs = 20);
-var simid visit adhr adhr_b rand cens_new;
-run;
-
-/* Check to see how many individuals in your dataset*/
-proc freq data=trial_full nlevels;
-	tables simid /noprint;
-	title 'Sample size by randomization arm';
+	if adhr = 0 then cens_new = 1;
+	visit2 = visit*visit;   
 run;
 
 /* Number of individuals who adhered in each arm at visit 0*/
@@ -500,10 +485,17 @@ proc freq data = trial_full;
 	tables adhr_b;
 	title 'Sample size by adherence & randomization arm';
 run;
+/* Check to see how many individuals in your dataset*/
+proc freq data=trial_full nlevels;
+	tables simid /noprint;
+	title 'Sample size by randomization arm';
+run;
 
+proc freq data = trial_full;
+tables adhr*cens_new;
+run;
 
-
-/* Need to recreate maxVisit and deathOverall*/
+/* Need to recreate maxVisit */
 proc sort data = trial_full; by simid;run;
 data trial_full;
 set trial_full;
@@ -514,7 +506,6 @@ else do;
 	if cens_new = 0 then vis_count = vis_count + 1;
 	else vis_count = vis_count;
 end;
-
 run;
 
 proc means data = trial_full max noprint;
@@ -748,7 +739,6 @@ run;
 /*Code Section 7 - Weighted Conditional Hazard Ratios*/
 /*****************************************************/
 
-
 /*Estimate weighted hazard ratio*/
 proc genmod data= trial_full (where = (visit < maxVisit))  descending;
 	class simid;
@@ -776,6 +766,13 @@ proc genmod data= trial_full (where = (visit < maxVisit))  descending;
 /*********************************************/
 /* Code Section 8 - Weighted Survival Curves */
 /*********************************************/
+
+/*Create interaction terms with randomization and time*/
+data trial_full;
+set trial_full;
+randvisit = rand*visit;
+randvisit2 = rand*visit2;
+run;
 
 /* Step 1. Estimate weighted outcome regression with interactions and store parameter estimates*/
 proc genmod data= trial_full (where = (visit < maxVisit))  descending;
