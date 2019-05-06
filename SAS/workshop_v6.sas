@@ -15,10 +15,11 @@
 /*Set dlgcdir to the location of your extracted file
 /*If you unzipped the github repository in your download folder, you don't need to change anything*/
 %let rc = %sysfunc(dlgcdir("&user./Downloads/CausalSurvivalWorkshop_2019/SAS"));
+
 libname surv "./";
 
 /* Or, set working directory to your location manually by uncommenting the code below */
-/*libname surv "<yourpathhere>\CausalSurvivalWorkshop_2019\SAS";*/
+/*libname surv "C:\Users\ejmurray\Dropbox\Conferences.Talks\2019\CausalSurvivalWorkshop_2019\SAS";*/
 
 /* Load the data from the trial*/
 data trial;
@@ -785,12 +786,11 @@ proc genmod data= trial_full (where = (visit < maxVisit))  descending;
 		AP_b IC_b DIUR_b AntiHyp_b 
 		OralHyp_b CardioM_b AnyQQS_b 
 		AnySTDep_b FVEB_b VCD_b /link = logit dist = bin ;
-		
-		weight stabw_t;
-		/*To get robust SE estimates*/
-		repeated subject = simid / type = ind;
-		
-		ods output ParameterEstimates = aplrixFit_USW;
+
+		weight stabw_t;		
+		ods output ParameterEstimates  = aplrixFit_USW;
+
+	
 		title 'Per-protocol effect, with IPW';
 	run;
 
