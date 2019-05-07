@@ -1,7 +1,7 @@
 /************************************************************
-* File name: workshop.do
+* File name: workshop_v6.do
 * Programmer: Eleanor Murray
-* Date: February 11, 2019
+* Date: May 1, 2019
 * Purpose: Commented code to go along with survival workshop
 ************************************************************/
 

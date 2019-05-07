@@ -1,7 +1,7 @@
 /************************************************************
-* File name: workshop_v4.sas
+* File name: workshop_v6.sas
 * Programmer: Eleanor Murray
-* Date: October 31, 2018
+* Date: May 1, 2019
 * Purpose: Commented code to go along with survival workshop
 ************************************************************/
 
@@ -456,6 +456,7 @@ var cHR CIR rd;
 title 'standardized HR, cumulative incidence ratio, and cumulative incidence difference up to visit 15';
 run;
 
+
 /*********************************************************************************************************/
 /**********************************Exercise 3*************************************************************/
 /*********************************************************************************************************/
@@ -511,7 +512,7 @@ run;
 proc means data = trial_full max noprint;
 by simid;
 var vis_count;
-output out = maxvisits (keep = simid maxVisit) max = maxVisit;
+output out = maxvisits (keep = simid maxVisit_cens) max = maxVisit_cens;
 run;
 
 data trial_full;
@@ -520,7 +521,7 @@ by simid;
 run;
 
 proc means data = trial_full max noprint;
-where visit le maxVisit;
+where visit le maxVisit_cens;
 by simid;
 var death;
 output out = deaths (keep = simid deathOverall) max = deathOverall;
@@ -539,6 +540,7 @@ run;
 proc freq data = baseline;
 tables deathoverall /missing;
 run;
+
 
 /* Check kaplan-meier fit in each arm*/
 proc template;
@@ -589,7 +591,7 @@ proc template;
 /* Use kaplan meier to nonparametrically estimate survival in each arm and plot output*/
 ods graphics on;
 proc lifetest data = baseline plots =(survival(atrisk));
-	time maxVisit*deathOverall(0);
+	time maxVisit_cens*deathOverall(0);
 	strata rand;
 run;
 ods graphics off;
@@ -661,7 +663,7 @@ proc logistic data= trial_full (where =(visit >0 & rand = 0)) descending;
 		;
 		output out = dFIT_0 (keep = simid visit pdenom_0)  p = pdenom_0;
 	run;
-	
+
 /* Sort by simID and visit*/
 proc sort data = trial_full;
 by simid visit;
@@ -685,7 +687,6 @@ merge trial_full nFit_1 dFit_1  nFit_0 dFit_0;
 by simid visit;
 
 if first.simid then do;
-
 	k1_0 = 1.0;
 	k1_w = 1.0;
 end;
@@ -693,20 +694,21 @@ end;
 retain k1_0 k1_w;
 
 else do;
+	if pnum_1 = . then pnum_1 = 1;
+	if pnum_0 = . then pnum_0 = 1;
+	if pdenom_1 = . then pdenom_1 = 1;
+	if pdenom_0 = . then pdenom_0 = 1;
 
 	if rand = 1 then do;
 		numCont = adhr*pnum_1 +(1-adhr)*(1-pnum_1);
 		denCont = adhr*pdenom_1 +(1-adhr)*(1-pdenom_1);
-		k1_0 = k1_0*numCont;
-		k1_w = k1_w*denCont;
 	end;
 	else if rand = 0 then do;
 		numCont = adhr*pnum_0 +(1-adhr)*(1-pnum_0);
 		denCont = adhr*pdenom_0 +(1-adhr)*(1-pdenom_0);
+	end;
 		k1_0 = k1_0*numCont;
 		k1_w = k1_w*denCont;
-	end;
-
 end;
 unstabw = 1.0/k1_w;
 stabw = k1_0/k1_w;
@@ -740,7 +742,7 @@ run;
 /*****************************************************/
 
 /*Estimate weighted hazard ratio*/
-proc genmod data= trial_full (where = (visit < maxVisit))  descending;
+proc genmod data= trial_full (where = (visit < maxVisit_cens))  descending;
 	class simid;
 		model death =  visit visit2 rand
         MI_bin NIHA_b HiSerChol_b 	
@@ -754,9 +756,9 @@ proc genmod data= trial_full (where = (visit < maxVisit))  descending;
 		repeated subject = simid / type = ind;
 		/*To get Hazard Ratio*/
 		estimate 'PPE' rand 1/exp;	
+		ods output GEEFitCriteria = fit;
 		title 'Per-protocol effect, with IPW';
 	run;
-
 
 /* Try changing "weights = stabw_t, " to */
 /* "weights = stabw_t, " for stabilized fit*/
@@ -775,7 +777,7 @@ randvisit2 = rand*visit2;
 run;
 
 /* Step 1. Estimate weighted outcome regression with interactions and store parameter estimates*/
-proc genmod data= trial_full (where = (visit < maxVisit))  descending;
+proc genmod data= trial_full (where = (visit < maxVisit_cens))  descending;
 	class simid;
 		model death =  visit visit2 rand randvisit randvisit2
         MI_bin NIHA_b HiSerChol_b 	
@@ -785,24 +787,23 @@ proc genmod data= trial_full (where = (visit < maxVisit))  descending;
 		AnySTDep_b FVEB_b VCD_b /link = logit dist = bin ;
 
 		weight stabw_t;		
-		ods output ParameterEstimates  = aplrixFit_USW;
+		ods output ParameterEstimates  = plrFit_ix_SWT;
 
 	
 		title 'Per-protocol effect, with IPW';
 	run;
 
-
-data aplrixFit_USW;
-set aplrixFit_USW;
+data plrFit_ix_SWT;
+set plrFit_ix_SWT;
 	if PARAMETER = "Scale" then delete;
 run;
 proc sql noprint;
-	select ESTIMATE FORMAT =16.12 INTO: IBC_ESTIMATE separated by ' ' from aplrixFit_USW;
+	select ESTIMATE FORMAT =16.12 INTO: IBC_ESTIMATE separated by ' ' from plrFit_ix_SWT;
 quit;
 proc sql noprint;
-	select PARAMETER INTO: MODEL separated by ' ' from aplrixFit_USW;
+	select PARAMETER INTO: MODEL separated by ' ' from plrFit_ix_SWT;
 quit;
-proc means sum noprint data = aplrixFit_USW;	
+proc means sum noprint data = plrFit_ix_SWT;	
 	var DF;
 	output out = nobs (drop = _type_ _freq_ where=(_stat_ ="N"));
 run;
@@ -878,7 +879,6 @@ proc means data = both mean ;
     var s;
     output out = means (drop = _type_ _freq_) mean(s) = s;
 run;
-
 
 proc transpose data=means out = wideres prefix = Surv_;
 var s;

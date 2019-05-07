@@ -1,7 +1,7 @@
 ###########################################################################
-# File name: workshop_v5.R
+# File name: workshop_v6_tidy.R
 # Programmer: Lucia Petito & Eleanor Murray
-# Date: February 20, 2019
+# Date: May 1, 2019
 # Purpose: Commented code to accompany causal survival workshop
 ###########################################################################
 
@@ -311,7 +311,7 @@ n
 #Data set up 
 trial_full <- trial_full%>%
   # Create interaction terms between exposure (adhr_b) and visit, visit2
-  # Create censoring variable - indicate when individual deviates from baseline
+  # Create censoring variable - indicate when individual stops adhering
   mutate(
     visit2 = visit*visit,
     adh_change = ifelse(adhr == 0,1,0)
@@ -322,7 +322,7 @@ trial_full <- trial_full%>%
     cens_visit = ifelse(is.na((which(adh_change %in% 1)[1])), max(visit),(which(adh_change %in% 1)[1]- 2)),
     cens_new = ifelse(cens_visit == visit, 1, ifelse(cens_visit < visit, NA , 0)),
     
-    maxVisit_cens = ifelse(cens_visit == 14, 14, cens_visit ),
+    maxVisit_cens = ifelse(cens_visit == -1, 0, cens_visit ),
     deathOverall_new = ifelse(is.na(cens_new), NA, 
                               ifelse(is.na((which(death %in% 1)[1])), 0, 
                                      ifelse((which(death %in% 1)[1]-1)<=  maxVisit_cens, 1, 0)))
@@ -335,6 +335,8 @@ baseline <- trial_full%>%
 
 #Look at number of individuals in each adherence group in each trial arm 
 with(baseline, table(adhr_b, rand))
+
+with(baseline, table(maxVisit_cens))
 
 
 # Check kaplan-meier fit in each arm
@@ -381,7 +383,6 @@ nFit_1 <- glm(adhr ~ visit + visit2 + adhr_b +
               data=trial_uncens[trial_uncens$rand == 1,],
               family=binomial())
 
-
 nFit_0 <- glm(adhr ~ visit + visit2 + adhr_b + 
                 mi_bin + NIHA_b + HiSerChol_b +
                 HiSerTrigly_b + HiHeart_b + CHF_b + 
@@ -390,7 +391,6 @@ nFit_0 <- glm(adhr ~ visit + visit2 + adhr_b +
                 AnySTDep_b + FVEB_b + VCD_b,
               data=trial_uncens[trial_uncens$rand == 0,],
               family=binomial())
-
 
 # Create predicted probability at each time point 
 # (Pr(adhr(t) = 1 | adhr_b, baseline, rand))
@@ -424,6 +424,7 @@ dFit_0 <- glm(adhr ~ visit + visit2 + adhr_b +
                 AnySTDep + FVEB + VCD,
               data=trial_uncens[trial_uncens$rand == 0,],
               family=binomial())
+
 # Create predicted probability at each time point 
 # (Pr(adhr(t) = 1 | adhr_b, baseline, time-varying covariates))
 trial_full$pdenom_1 <-  predict(dFit_1, newdata=trial_full, type='response')
@@ -435,6 +436,7 @@ trial_full <- trial_full[order(trial_full$simID, trial_full$visit),]
 
 # Contribution from adhr(t) = 0 is 1 - p
 # Contribution from adhr(t) = 1 is p
+
 trial_full <- trial_full %>% 
   mutate(
     numCont = ifelse(rand == 1, (adhr*pnum_1 + (1-adhr)*(1-pnum_1)),(adhr*pnum_0 + (1-adhr)*(1-pnum_0)) ),
@@ -518,8 +520,9 @@ exp(coef(plrFit_SWT)) # to get Hazard Ratios
 trial_full <- trial_full %>% 
   mutate(
     randvisit = rand*visit,
-    randvisit2 = randvisit*visit2
+    randvisit2 = rand*visit2
   )
+
 
 # Step 1. Estimate weighted outcome regression with interactions
 plrFit_ix_SWT <- glm(death ~ visit + visit2 + rand + 
