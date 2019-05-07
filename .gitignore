@@ -2,3 +2,11 @@
 .Rhistory
 .RData
 .Ruserdata
+*.pptx
+
+draft/
+
+*old*
+*.png
+*_v5*
+*simdata_editing*
