@@ -6,4 +6,4 @@ This workshop is designed to provide an overview to causal inference for surviva
 
 The data for the workshop are a simulated version of the Coronary Drug Project trial. The workshop is available for SAS, R, and Stata users. Please ensure that you have downloaded the correct version of the dataset for your preferred coding language. The workshop instructions are provided as a single file regardless of programming language. A solutions manual will be available upon completion of the live version of the workshop.
 
-Please direct any comments, errors, or suggestions to Ellie Murray at emurray@mail.harvard.edu.
+Please direct any comments, errors, or suggestions to Ellie Murray at ejmurray@bu.edu.
