@@ -1,4 +1,4 @@
-# CausalSurvivalWorkshop_2019
+# CausalSurvivalAnalysisWorkshop
 
 This repository contains the materials for the Causal Survival Analysis workshop developed by Eleanor Murray, Ellen Caniglia, and Lucia Petito.
 
