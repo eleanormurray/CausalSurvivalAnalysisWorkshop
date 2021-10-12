@@ -2,7 +2,7 @@
 
 This repository contains the materials for the Causal Survival Analysis workshop developed by Eleanor Murray, Ellen Caniglia, and Lucia Petito.
 
-This workshop has been presented at conferences and universities around the world and is pending publication in Research Methods in Medicine & Health Sciences Journal, "Causal Survival Analysis: A guide to estimating intention-to-treat and per-protocol effects from randomized clinical trials with non-adherence and loss to follow-up" (2020). 
+This workshop has been presented at conferences and universities around the world and has been published in Research Methods in Medicine & Health Sciences Journal, "Causal Survival Analysis: A guide to estimating intention-to-treat and per-protocol effects from randomized clinical trials with non-adherence and loss to follow-up" (2020) <a href="https://journals.sagepub.com/doi/full/10.1177/2632084320961043">here</>. 
 
 <a href="https://zenodo.org/badge/latestdoi/170176789"><img src="https://zenodo.org/badge/170176789.svg" alt="DOI"></a>
 
